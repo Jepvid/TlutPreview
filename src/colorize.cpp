@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "core/image_codec.h"
-#include "core/sha256.h"
 #include "core/types/texture.h"
 #include "games/bk64_i8_transparency_map.h"
 #include "games/mk64_tlut_map.h"
@@ -491,7 +490,7 @@ ColorizeResult colorizeTexturePack(const std::filesystem::path& sourceDir, const
     if (!manifestDoc.isObject()) {
         throw std::runtime_error("manifest.json is not a JSON object.");
     }
-    QJsonObject manifest = manifestDoc.object();
+    const QJsonObject manifest = manifestDoc.object();
 
     PackIndex index;
     std::vector<std::string> ciNames;
@@ -514,6 +513,7 @@ ColorizeResult colorizeTexturePack(const std::filesystem::path& sourceDir, const
     ColorizeResult result;
     std::filesystem::create_directories(target);
     std::filesystem::copy(source, target, std::filesystem::copy_options::recursive);
+    std::filesystem::remove(target / "manifest.json");
     for (const auto& entry : std::filesystem::recursive_directory_iterator(target)) {
         if (entry.is_regular_file()) {
             ++result.filesCopied;
@@ -526,11 +526,7 @@ ColorizeResult colorizeTexturePack(const std::filesystem::path& sourceDir, const
     int done = 0;
 
     auto rewrite = [&](const std::string& name, const RgbaImage& image) {
-        std::vector<uint8_t> png = bitdeck::encodePng(image);
-        writeFileBytes(target / (name + ".png"), png);
-        QJsonObject entry = manifest.value(QString::fromStdString(name)).toObject();
-        entry[QStringLiteral("hash")] = QString::fromStdString(bitdeck::sha256Hex(png));
-        manifest[QString::fromStdString(name)] = entry;
+        writeFileBytes(target / (name + ".png"), bitdeck::encodePng(image));
     };
 
     if (options.applyTlut) {
@@ -563,9 +559,6 @@ ColorizeResult colorizeTexturePack(const std::filesystem::path& sourceDir, const
             }
         }
     }
-
-    QByteArray manifestJson = QJsonDocument(manifest).toJson(QJsonDocument::Indented);
-    writeFileBytes(target / "manifest.json", std::vector<uint8_t>(manifestJson.begin(), manifestJson.end()));
 
     return result;
 }

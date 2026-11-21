@@ -1,17 +1,28 @@
 # TlutPreview
 
-A small Qt app that takes a texture pack folder extracted by
-[BitDeck](https://github.com/Jepvid/BitDeck) ("Extract textures from otr/o2r",
-which writes PNGs plus a `manifest.json`) and writes a copy of it with:
+A companion tool that makes textures exported by
+[Retro](https://github.com/HarbourMasters/retro),
+[NeoRetro](https://github.com/HarbourMasters/neoretro) or
+[BitDeck](https://github.com/Jepvid/BitDeck) easier to edit visually.
+
+Those tools export CI textures as grayscale palette indices, and translucent
+intensity textures without alpha. Neither looks the way it does in game, which
+makes them hard to judge or paint over in an image editor. TlutPreview writes
+a copy of an extracted texture folder with:
 
 - **Apply TLUT**: CI4/CI8 textures recolored with their real palette instead
   of the synthetic grayscale one.
 - **Apply IA Transparency**: I8 textures known to be drawn translucent
   (glow/spark/dust) given alpha = intensity.
 
-The source folder is never modified. The copy's `manifest.json` records the
-rewritten PNGs' new hashes, so it can be opened in BitDeck's Make Texture
-Pack like any other extracted folder.
+The input is an extracted texture folder: PNGs plus the `manifest.json` that
+all three tools write when extracting an otr/o2r. The source folder is never
+modified.
+
+The copy is only a base for editing: open its textures in your image editor to
+get images that show the real colors and transparency. Make the texture pack
+from the original extracted folder. The copy has no `manifest.json`, so it
+can't be packed.
 
 ## How textures are matched
 

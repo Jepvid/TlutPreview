@@ -108,13 +108,6 @@ RgbaImage readPng(const fs::path& path) {
     return bitdeck::decodePng(readFileBytes(path));
 }
 
-QJsonObject readManifest(const fs::path& dir) {
-    std::vector<uint8_t> bytes = readFileBytes(dir / "manifest.json");
-    return QJsonDocument::fromJson(QByteArray(reinterpret_cast<const char*>(bytes.data()),
-                                              static_cast<qsizetype>(bytes.size())))
-        .object();
-}
-
 bool pixelIs(const RgbaImage& image, int x, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
     return image.r(x, 0) == r && image.g(x, 0) == g && image.b(x, 0) == b && image.a(x, 0) == a;
 }
@@ -144,7 +137,8 @@ int main() {
     fs::path ootOut = root / "oot_pack (TLUT)";
     ColorizeResult result = colorizeTexturePack(oot.dir(), ootOut, ColorizeOptions{});
 
-    check(result.filesCopied == 7, "copy: every PNG plus manifest.json lands in the output folder");
+    check(result.filesCopied == 6, "copy: every PNG lands in the output folder");
+    check(!fs::exists(ootOut / "manifest.json"), "copy: the output folder has no manifest.json, so it can't be packed");
     check(result.tlutApplied == 1 && result.tlutUnmatched == 1,
           "TLUT: the baked-table CI texture is recolored, the unpaired one is counted as unmatched");
     check(result.iaApplied == 1, "IA: only the I8 texture in OOT's translucency table is changed");
@@ -162,14 +156,6 @@ int main() {
     check(readPng(ootOut / "objects/gameplay_keep/gSolidWallTex.png").a(0, 0) == 255,
           "IA: an I8 texture not in the table stays opaque");
 
-    QJsonObject outManifest = readManifest(ootOut);
-    std::string newHairHash = bitdeck::sha256Hex(readFileBytes(ootOut / "objects/object_ane/gCuccoLadyHairTex.png"));
-    check(outManifest["objects/object_ane/gCuccoLadyHairTex"].toObject()["hash"].toString().toStdString() ==
-              newHairHash,
-          "manifest: the copy's manifest.json records the recolored PNG's hash");
-    check(outManifest["objects/object_ane/gCuccoLadyHairTex"].toObject()["textureType"].toInt() ==
-              static_cast<int>(TextureType::Palette8bpp),
-          "manifest: other fields are carried over unchanged");
     check(readFileBytes(oot.dir() / "objects/object_ane/gCuccoLadyHairTex.png") == sourceHairBytes,
           "source: the original pack folder is left untouched");
 

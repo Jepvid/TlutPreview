@@ -24,11 +24,10 @@ struct ColorizeResult {
 using ColorizeProgress = std::function<void(int done, int total)>;
 
 // Copies the extracted texture pack at sourceDir (a folder holding
-// manifest.json, as written by BitDeck's "Extract textures from otr/o2r")
-// to targetDir, then rewrites the copy's CI4/CI8 PNGs with their TLUT
-// applied and its translucent I8 PNGs with alpha = intensity, per options.
-// manifest.json in targetDir carries the rewritten files' new hashes;
-// sourceDir is left untouched.
+// manifest.json, as written by Retro, NeoRetro or BitDeck) to targetDir,
+// then rewrites the copy's CI4/CI8 PNGs with their TLUT applied and its
+// translucent I8 PNGs with alpha = intensity, per options. The copy gets no
+// manifest.json, so it can't be packed; sourceDir is left untouched.
 //
 // TLUT pairing comes from the per-game baked CI-texture -> TLUT tables
 // (MK64, MM, OOT, PM64, SF64), PM64's naming conventions, and name
