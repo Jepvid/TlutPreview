@@ -19,7 +19,7 @@ env:
 jobs:
   linux:
     name: Linux (AppImage)
-    runs-on: ubuntu-24.04 # AppImage needs glibc 2.39+ (built against this image)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -73,7 +73,7 @@ jobs:
     name: Windows (zip)
     runs-on: windows-latest
     env:
-      VCPKG_TRIPLET: x64-windows-static-md # static libpng/libjpeg, dynamic CRT (matches Qt)
+      VCPKG_TRIPLET: x64-windows-static-md
     steps:
       - uses: actions/checkout@v4
 
@@ -104,7 +104,6 @@ jobs:
           New-Item -ItemType Directory -Force dist/TlutPreview | Out-Null
           Copy-Item build/Release/TlutPreview.exe dist/TlutPreview/
           windeployqt --release --no-translations dist/TlutPreview/TlutPreview.exe
-          # App-local MSVC runtime so users don't need the VC++ redistributable.
           Get-ChildItem "$env:VCToolsRedistDir/x64/Microsoft.VC*.CRT/*.dll" | Copy-Item -Destination dist/TlutPreview/
           Compress-Archive -Path dist/TlutPreview -DestinationPath TlutPreview-windows-x64.zip
 
@@ -116,7 +115,7 @@ jobs:
 
   macos:
     name: macOS (dmg)
-    runs-on: macos-14 # Apple Silicon
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -142,7 +141,7 @@ jobs:
       - name: Package dmg
         run: |
           macdeployqt build/TlutPreview.app
-          # macdeployqt rewrites the binaries; re-sign ad hoc so Apple Silicon will launch them.
+          # macdeployqt invalidates signatures; Apple Silicon refuses to launch unsigned binaries.
           codesign --force --deep --sign - build/TlutPreview.app
           hdiutil create -volname TlutPreview -srcfolder build/TlutPreview.app -ov -format UDZO TlutPreview-macos-arm64.dmg
 
@@ -165,9 +164,6 @@ jobs:
           path: dist
           merge-multiple: true
 
-      # One rolling "latest" release: drop the previous one (and its tag), then
-      # recreate it at this commit. The concurrency group above keeps runs on
-      # main from overlapping.
       - name: Replace "latest" release
         env:
           GH_TOKEN: ${{ github.token }}
