@@ -1,0 +1,8 @@
+build/
+build-*/
+CMakeFiles/
+CMakeCache.txt
+*.o
+compile_commands.json
+.vscode/
+__pycache__/
