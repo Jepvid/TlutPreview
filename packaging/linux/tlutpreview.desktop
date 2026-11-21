@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=TlutPreview
+Comment=Apply TLUTs and I8 transparency to BitDeck-extracted texture folders
+Exec=TlutPreview
+Icon=tlutpreview
+Categories=Graphics;
+Terminal=false

@@ -1,0 +1,192 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  QT_VERSION: '6.8.3'
+
+jobs:
+  linux:
+    name: Linux (AppImage)
+    runs-on: ubuntu-24.04 # AppImage needs glibc 2.39+ (built against this image)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libpng-dev libjpeg-dev libgl1-mesa-dev libegl1 \
+            libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          tools="$RUNNER_TEMP/linuxdeploy"
+          mkdir -p "$tools"
+          wget -q -P "$tools" https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q -P "$tools" https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x "$tools"/*.AppImage
+          export PATH="$tools:$PATH"
+          export QMAKE="$QT_ROOT_DIR/bin/qmake"
+          mkdir -p out && cd out
+          linuxdeploy-x86_64.AppImage --appdir AppDir \
+            --executable ../build/TlutPreview \
+            --desktop-file ../packaging/linux/tlutpreview.desktop \
+            --icon-file ../packaging/linux/tlutpreview.svg \
+            --plugin qt --output appimage
+          mv TlutPreview*.AppImage ../TlutPreview-linux-x86_64.AppImage
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TlutPreview-linux
+          path: TlutPreview-linux-x86_64.AppImage
+          if-no-files-found: error
+
+  windows:
+    name: Windows (zip)
+    runs-on: windows-latest
+    env:
+      VCPKG_TRIPLET: x64-windows-static-md # static libpng/libjpeg, dynamic CRT (matches Qt)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Install libpng and libjpeg-turbo
+        run: vcpkg install libpng libjpeg-turbo --triplet $env:VCPKG_TRIPLET
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET"
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package zip
+        run: |
+          New-Item -ItemType Directory -Force dist/TlutPreview | Out-Null
+          Copy-Item build/Release/TlutPreview.exe dist/TlutPreview/
+          windeployqt --release --no-translations dist/TlutPreview/TlutPreview.exe
+          # App-local MSVC runtime so users don't need the VC++ redistributable.
+          Get-ChildItem "$env:VCToolsRedistDir/x64/Microsoft.VC*.CRT/*.dll" | Copy-Item -Destination dist/TlutPreview/
+          Compress-Archive -Path dist/TlutPreview -DestinationPath TlutPreview-windows-x64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TlutPreview-windows
+          path: TlutPreview-windows-x64.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS (dmg)
+    runs-on: macos-14 # Apple Silicon
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libpng and libjpeg-turbo
+        run: brew install libpng jpeg-turbo ninja
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$(brew --prefix libpng);$(brew --prefix jpeg-turbo)"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package dmg
+        run: |
+          macdeployqt build/TlutPreview.app
+          # macdeployqt rewrites the binaries; re-sign ad hoc so Apple Silicon will launch them.
+          codesign --force --deep --sign - build/TlutPreview.app
+          hdiutil create -volname TlutPreview -srcfolder build/TlutPreview.app -ov -format UDZO TlutPreview-macos-arm64.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TlutPreview-macos
+          path: TlutPreview-macos-arm64.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [linux, windows, macos]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # One rolling "latest" release: drop the previous one (and its tag), then
+      # recreate it at this commit. The concurrency group above keeps runs on
+      # main from overlapping.
+      - name: Replace "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          gh release delete latest --yes --cleanup-tag || true
+          {
+            echo "Automatic build of \`$short_sha\` on $(date -u '+%Y-%m-%d %H:%M UTC')."
+            if [ -n "$COMMIT_MSG" ]; then
+              echo
+              echo '```'
+              echo "$COMMIT_MSG"
+              echo '```'
+            fi
+          } > notes.md
+          gh release create latest dist/* \
+            --target "$GITHUB_SHA" \
+            --title "Latest build ($short_sha)" \
+            --notes-file notes.md \
+            --latest
